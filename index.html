@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로봇청소기 게임</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #ffffff;
+            border: 2px solid #000000;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <div id="score">점수: 30</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        
+        let score = 30;
+        let robot = { x: 300, y: 300, radius: 20 };
+        let speed = 10; 
+        let icons = [];
+        let gameOver = false;
+        const iconTypes = [
+            { type: 'circle', color: 'blue', points: 1, size: 10, removeOnEdge: false },         // 파랑색 동그라미 (가장자리에 닿아도 사라지지 않음)
+            { type: 'circle', color: 'green', points: 5, size: 10, removeOnEdge: false },        // 초록색 동그라미 (가장자리에 닿아도 사라지지 않음)
+            { type: 'star', color: 'yellow', points: 10, size: 10, removeOnEdge: false },        // 노랑색 별 (가장자리에 닿아도 사라지지 않음)
+            { type: 'worm', color: 'gray', points: -5, size: 10, removeOnEdge: true },           // 회색 세모 (지렁이, 가장자리에 닿으면 사라짐)
+            { type: 'spider', color: 'black', points: -10, size: 10, removeOnEdge: true },       // 검정색 세모 (거미, 가장자리에 닿으면 사라짐)
+            { type: 'cat', color: 'red', points: -9999, size: 30, removeOnEdge: false }          // 빨간색 세모 (고양이, 가장자리에 닿아도 사라지지 않음)
+        ];
+
+        let keys = {};
+
+        // 키 입력 처리
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+
+            // 스페이스 바로 게임 재시작
+            if (e.key === ' ' && gameOver) {
+                restartGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+        // 게임 재시작 함수
+        function restartGame() {
+            score = 30;
+            icons = [];
+            gameOver = false;
+            scoreElement.textContent = '점수: ' + score;
+            gameLoop();
+        }
+
+        // 아이콘 생성
+        function createIcon() {
+            // 동그라미와 별 아이콘이 세모 아이콘보다 2배 확률로 생성되도록 가중치 적용
+            const weightedIconTypes = [
+                iconTypes[0], iconTypes[0],  // 파란색 동그라미 (2배 확률)
+                iconTypes[1], iconTypes[1],  // 초록색 동그라미 (2배 확률)
+                iconTypes[2], iconTypes[2],  // 노란색 별 (2배 확률)
+                iconTypes[3],                // 회색 세모 (지렁이)
+                iconTypes[4],                // 검정색 세모 (거미)
+                iconTypes[5]                 // 빨간색 세모 (고양이)
+            ];
+
+            const randomType = weightedIconTypes[Math.floor(Math.random() * weightedIconTypes.length)];
+            
+            // 아이콘이 가장자리에서 생성되도록 좌표 설정
+            let x, y;
+            const edge = Math.floor(Math.random() * 4); // 0: 상, 1: 하, 2: 좌, 3: 우
+            if (edge === 0) { x = Math.random() * canvas.width; y = 0; }         // 상단 가장자리
+            else if (edge === 1) { x = Math.random() * canvas.width; y = canvas.height; } // 하단 가장자리
+            else if (edge === 2) { x = 0; y = Math.random() * canvas.height; }    // 좌측 가장자리
+            else { x = canvas.width; y = Math.random() * canvas.height; }         // 우측 가장자리
+
+            const icon = {
+                x: x,
+                y: y,
+                type: randomType.type,
+                color: randomType.color,
+                points: randomType.points,
+                size: randomType.size,
+                dx: (Math.random() - 0.5) * 4,
+                dy: (Math.random() - 0.5) * 4,
+                removeOnEdge: randomType.removeOnEdge
+            };
+
+            // 고양이 아이콘(빨간 세모)의 제한
+            if (icon.type === 'cat' && icons.filter(icon => icon.type === 'cat').length >= 3) {
+                return; // 이미 3개의 고양이 아이콘이 있을 때 추가 생성을 막음
+            }
+            
+            icons.push(icon);
+        }
+
+        // 일정 시간마다 아이콘 생성
+        setInterval(createIcon, 500);  // 500ms마다 생성
+
+        // 로봇 그리기
+        function drawRobot() {
+            ctx.beginPath();
+            ctx.arc(robot.x, robot.y, robot.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'black';
+            ctx.fill();
+            ctx.closePath();
+
+            // 로봇 위에 점수 표시
+            ctx.fillStyle = 'white';
+            ctx.font = '16px Arial';
+            ctx.fillText(score, robot.x - 10, robot.y + 5);
+        }
+
+        // 아이콘 그리기
+        function drawIcons() {
+            icons.forEach(icon => {
+                ctx.fillStyle = icon.color;
+                if (icon.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(icon.x, icon.y, icon.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.closePath();
+                } else if (icon.type === 'star') {
+                    ctx.beginPath();
+                    ctx.moveTo(icon.x, icon.y - icon.size);
+                    for (let i = 0; i < 5; i++) {
+                        ctx.lineTo(icon.x + icon.size * Math.cos(2 * Math.PI * i / 5), icon.y + icon.size * Math.sin(2 * Math.PI * i / 5));
+                    }
+                    ctx.fill();
+                    ctx.closePath();
+                } else if (icon.type === 'worm' || icon.type === 'spider' || icon.type === 'cat') {
+                    ctx.beginPath();
+                    ctx.moveTo(icon.x, icon.y - icon.size);
+                    ctx.lineTo(icon.x + icon.size, icon.y + icon.size);
+                    ctx.lineTo(icon.x - icon.size, icon.y + icon.size);
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            });
+        }
+
+        // 로봇과 아이콘 충돌 체크
+        function checkCollision() {
+            icons = icons.filter(icon => {
+                const dist = Math.sqrt((robot.x - icon.x) ** 2 + (robot.y - icon.y) ** 2);
+                if (dist < robot.radius + icon.size) {
+                    score += icon.points;
+                    if (icon.points === -9999 || score <= 0) {
+                        gameOver = true;
+                        alert('게임 종료! 스페이스 바를 눌러 다시 시작하세요.');
+                    }
+                    return icon.type === 'cat'; // 고양이 아이콘만 충돌 후에도 유지
+                }
+                return true;
+            });
+        }
+
+        // 아이콘 움직임
+        function moveIcons() {
+            icons.forEach(icon => {
+                icon.x += icon.dx;
+                icon.y += icon.dy;
+
+                // 아이콘이 가장자리에 닿으면 사라짐(고양이 제외)
+                if (icon.removeOnEdge) {
+                    if (icon.x < 0 || icon.x > canvas.width || icon.y < 0 || icon.y > canvas.height) {
+                        icons = icons.filter(i => i !== icon);
+                    }
+                } else {
+                    // 고양이 아이콘은 튕겨져서 계속 이동
+                    if (icon.x < 0 || icon.x > canvas.width) icon.dx = -icon.dx;
+                    if (icon.y < 0 || icon.y > canvas.height) icon.dy = -icon.dy;
+                }
+            });
+        }
+
+        // 로봇 움직임
+        function moveRobot() {
+            if (keys['ArrowUp'] && robot.y - robot.radius > 0) robot.y -= speed;
+            if (keys['ArrowDown'] && robot.y + robot.radius < canvas.height) robot.y += speed;
+            if (keys['ArrowLeft'] && robot.x - robot.radius > 0) robot.x -= speed;
+            if (keys['ArrowRight'] && robot.x + robot.radius < canvas.width) robot.x += speed;
+        }
+
+        // 점수 감소
+        function decreaseScore() {
+            if (!gameOver) {
+                score -= 3;
+                scoreElement.textContent = '점수: ' + score;
+                if (score <= 0) {
+                    gameOver = true;
+                    alert('게임 종료! 스페이스 바를 눌러 다시 시작하세요.');
+                }
+            }
+        }
+
+        setInterval(decreaseScore, 1000); // 1초마다 3점 감소
+
+        // 게임 루프
+        function gameLoop() {
+            if (!gameOver) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawRobot();
+                moveRobot();
+                drawIcons();
+                moveIcons();
+                checkCollision();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
